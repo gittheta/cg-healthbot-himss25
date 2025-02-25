@@ -30,7 +30,7 @@ def main():
     
     logging.log(logging.INFO, 'loading index...')
     
-    storage_context = StorageContext.from_defaults(persist_dir="..\\working\\vector_store\\index_json")
+    storage_context = StorageContext.from_defaults(persist_dir="./index_json")
     
     index = load_index_from_storage(
         storage_context,
