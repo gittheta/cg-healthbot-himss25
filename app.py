@@ -56,9 +56,8 @@ with st.sidebar:
     st.title("Health History Assistant")
     st.markdown('''This AI-powered assistant leverages the latest interoperability standards
                 to produce tailored, natural language summaries of patient data. With seamless
-                integration into the EHR, it enables practitioners 
-                to ask questions and gather relevant information for their intake process,
-                all while staying within their clinical workflow.''')
+                integration into the clinical workflow, it enables practitioners 
+                to ask follow up questions and gather relevant information for their care''')
     
     grounding_method = st.selectbox('Pick a grounding method', ['Long Context', 'RAG'])
 
