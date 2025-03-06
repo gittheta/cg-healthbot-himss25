@@ -57,7 +57,7 @@ with st.sidebar:
     st.markdown('''This AI-powered assistant leverages the latest interoperability standards
                 to produce tailored, natural language summaries of patient data. With seamless
                 integration into the clinical workflow, it enables practitioners 
-                to ask follow up questions and gather relevant information for their care''')
+                to ask follow up questions and gather relevant information for improved patient care.''')
     
     grounding_method = st.selectbox('Pick a grounding method', ['Long Context', 'RAG'])
 
