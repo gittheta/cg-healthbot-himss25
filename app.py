@@ -19,7 +19,6 @@ FHIR_BASE_URL = 'https://sof-services.hike.health:8000'
 
 avatar_images = {'user':':material/stethoscope:', 'assistant':'bot_avatar.jpeg'}
 
-
 def get_query_context(provider_specialty):
     r = requests.get(f'{FHIR_BASE_URL}/Patient/ae7eb92d-0ecc-40e4-8e88-91167336a2c6/$everything?_count=400',
                     headers={'Authorization':FHIR_SERVER_KEY})
@@ -67,71 +66,87 @@ with st.sidebar:
 
     if st.button('Reset chat'):
         del st.session_state['messages']   
+        del st.session_state['embed_model']
 
 
 def main():
-    # st.title("Health History Assistant ")
 
-    # reader = SimpleDirectoryReader(input_dir="..\\working\\raw_fhir\\")
-    # docs = reader.load_data()
-    # embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-base-en-v1.5")
     if "llm" not in st.session_state:
         st.session_state.llm = Gemini(model="models/gemini-2.0-flash",
                  system_prompt="You are a knowledgable and helpful AI health history assistant. You can answer questions on a patient's health history and can provide analysis based on it. When you are asked to provide a summary of the patient's health history, the summary should consist of 3 parts - a synopsis describing the main problems of the patient, the patient's treatment history thus far, and recommended follow up treatment the patient should get.")
         print('created llm')
     # logging.log(logging.INFO, 'loading index...')
     
-    # storage_context = StorageContext.from_defaults(persist_dir="./index_json")
+    if grounding_method == 'RAG':
+        if "embed_model" not in st.session_state:
+            st.session_state.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-base-en-v1.5")
+            storage_context = StorageContext.from_defaults(persist_dir="./index_json")
+
+            st.session_state.index = load_index_from_storage(
+                storage_context,
+                # we can optionally override the embed_model here
+                # it's important to use the same embed_model as the one used to build the index
+                embed_model=st.session_state.embed_model
+            )
+
+            summary_prompt = f'Please provide a {provider_specialty} specific summary of the patient\'s health history in a few paragraphs.'
+            
+            st.session_state.chat_engine = st.session_state.index.as_chat_engine(llm=st.session_state.llm, similarity_top_k=30)
+            response = st.session_state.chat_engine.chat(summary_prompt)
+            st.session_state.messages = [{'content': response, 'role': 'assistant'}]
+
+        for message in st.session_state.messages:
+            with st.chat_message(message['role'], avatar=avatar_images[message['role']]):
+                st.markdown(message['content'])
+
+        if prompt := st.chat_input("What would you like to know about Sarah?"):
+            with st.chat_message('user', avatar=avatar_images['user']):
+                st.markdown(prompt)
+            
+            st.session_state.messages.append({'content': prompt, 'role': 'user'})
+            response = st.session_state.chat_engine.chat(prompt)
     
-    # index = load_index_from_storage(
-    #     storage_context,
-    #     # we can optionally override the embed_model here
-    #     # it's important to use the same embed_model as the one used to build the index
-    #     embed_model=embed_model
-    # )
+            with st.chat_message("assistant", avatar=avatar_images['assistant']):
+                st.markdown(response)
+                # for r in response:
+                #     st.write(r.delta)
+            st.session_state.messages.append({'content': response, 'role': 'assistant'})
 
-    # # if "messages" not in st.session_state:
-    # #     st.session_state.messages = []
+            # query_engine = st.session_index.as_chat_engine(response_mode="condense_question", llm=st.session_state.llm, similarity_top_k=30, streaming=True)
+            # response = query_engine.query(query)
+            # st.write_stream(response.response_gen)
 
-    # with open('..\\working\\raw_fhir\\sarah-williams-bundle-250220.json') as fin:
-    #     sw_data_raw = fin.read()
 
-    # voice_common = 'Use the voice of a lay person when responding to queries. Use common verbiage.'
-    # voice_clinician = 'Use the voice of a clinician when responding to queries. Use clinical verbiage.' 
-    # initial = f'Use the following set of patient health data when responding to subsequent queries. {voice_clinician} Health Data: {sw_data_raw}'
+        # if "messages" not in st.session_state:
+        #     st.session_state.messages = []
+
+    else:
+        if "messages" not in st.session_state:
+            query_context = get_query_context(provider_specialty)
+            summary_prompt = 'Please provide a summary of the patient\'s health history in a few paragraphs.'
+            st.session_state.messages = [ChatMessage(role='user', content=f'{query_context} {summary_prompt}')]
+            sum_res = st.session_state.llm.chat(messages=st.session_state.messages)
+            st.session_state.messages.append(sum_res.message)
+
+
+        for message in st.session_state.messages[1:]:
+            with st.chat_message(message.role.value, avatar=avatar_images[message.role.value]):
+                st.markdown(message.content)
+
+        if prompt := st.chat_input("What would you like to know about Sarah?"):
+            with st.chat_message('user', avatar=avatar_images['user']):
+                st.markdown(prompt)
+            
+            st.session_state.messages.append(ChatMessage(role='user', content=prompt))
+            response = st.session_state.llm.chat(messages=st.session_state.messages)
     
-    if "messages" not in st.session_state:
-        query_context = get_query_context(provider_specialty)
-        summary_prompt = 'Please provide a summary of the patient\'s health history in a few paragraphs.'
-        st.session_state.messages = [ChatMessage(role='user', content=f'{query_context} {summary_prompt}')]
-        sum_res = st.session_state.llm.chat(messages=st.session_state.messages)
-        st.session_state.messages.append(sum_res.message)
+            with st.chat_message("assistant", avatar=avatar_images['assistant']):
+                st.markdown(response.message.content)
+                # for r in response:
+                #     st.write(r.delta)
+            st.session_state.messages.append(response.message)
 
 
-    for message in st.session_state.messages[1:]:
-        with st.chat_message(message.role.value, avatar=avatar_images[message.role.value]):
-            st.markdown(message.content)
-
-    if prompt := st.chat_input("What would you like to know about Sarah?"):
-        with st.chat_message('user', avatar=avatar_images['user']):
-            st.markdown(prompt)
-        
-        st.session_state.messages.append(ChatMessage(role='user', content=prompt))
-        response = st.session_state.llm.chat(messages=st.session_state.messages)
- 
-        with st.chat_message("assistant", avatar=avatar_images['assistant']):
-            st.markdown(response.message.content)
-            # for r in response:
-            #     st.write(r.delta)
-        st.session_state.messages.append(response.message)
-
-
-    # query=st.text_input("Ask questions related to your Data")
-
-    # if query:
-    #     query_engine = index.as_query_engine(response_mode="compact", llm=llm, similarity_top_k=30, streaming=True)
-    #     response = query_engine.query(query)
-    #     st.write_stream(response.response_gen)
 
 if __name__=='__main__':
     main()
