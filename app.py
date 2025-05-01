@@ -39,7 +39,6 @@ def get_query_context(provider_specialty):
     
     return initial
 
-
 with st.sidebar:
     cg_logo_url = 'https://www.capgemini.com/wp-content/themes/capgemini2020/assets/images/logo.svg'
 
@@ -57,7 +56,7 @@ with st.sidebar:
                 to produce tailored, natural language summaries of patient data. With seamless
                 integration into the clinical workflow, it enables practitioners 
                 to ask follow up questions and gather relevant information for improved patient care.''')
-    
+
     grounding_method = st.selectbox('Pick a grounding method', ['Long Context', 'RAG'])
 
     provider_specialty = st.selectbox('Pick a provider specialty', ['Cardiologist', 'PCP',
@@ -65,28 +64,38 @@ with st.sidebar:
                                                                     'Nutritionist', 'Psychiatrist'])
 
     if st.button('Reset chat'):
-        del st.session_state['messages']   
-        del st.session_state['embed_model']
-
+        if 'messages' in st.session_state:
+            del st.session_state['messages']
 
 def main():
-
+    
+    # determine whether to use RAG or long context flow
+    # if there is existing chat history, use the flow indicated by chat history
+    # if there is no history, use flow selected in drop down widget
+    if 'messages' in st.session_state:
+        if isinstance(st.session_state.messages[0], ChatMessage):
+            st.session_state.gm = 'Long Context'
+        else:
+            st.session_state.gm = 'RAG'
+    else:
+        st.session_state.gm = grounding_method
+ 
     if "llm" not in st.session_state:
         st.session_state.llm = Gemini(model="models/gemini-2.0-flash",
                  system_prompt="You are a knowledgable and helpful AI health history assistant. You can answer questions on a patient's health history and can provide analysis based on it. When you are asked to provide a summary of the patient's health history, the summary should consist of 3 parts - a synopsis describing the main problems of the patient, the patient's treatment history thus far, and recommended follow up treatment the patient should get.")
         print('created llm')
-    # logging.log(logging.INFO, 'loading index...')
     
-    if grounding_method == 'RAG':
-        if "embed_model" not in st.session_state:
-            st.session_state.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-base-en-v1.5")
-            storage_context = StorageContext.from_defaults(persist_dir="./index_json")
+    if st.session_state.gm == 'RAG':
+        # RAG flow   
+        if "messages" not in st.session_state:
+            embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-base-en-v1.5")
+            storage_context = StorageContext.from_defaults(persist_dir="./index_json_sb_250302")
 
             st.session_state.index = load_index_from_storage(
                 storage_context,
                 # we can optionally override the embed_model here
                 # it's important to use the same embed_model as the one used to build the index
-                embed_model=st.session_state.embed_model
+                embed_model=embed_model
             )
 
             summary_prompt = f'Please provide a {provider_specialty} specific summary of the patient\'s health history in a few paragraphs.'
@@ -108,20 +117,12 @@ def main():
     
             with st.chat_message("assistant", avatar=avatar_images['assistant']):
                 st.markdown(response)
-                # for r in response:
-                #     st.write(r.delta)
             st.session_state.messages.append({'content': response, 'role': 'assistant'})
 
-            # query_engine = st.session_index.as_chat_engine(response_mode="condense_question", llm=st.session_state.llm, similarity_top_k=30, streaming=True)
-            # response = query_engine.query(query)
-            # st.write_stream(response.response_gen)
-
-
-        # if "messages" not in st.session_state:
-        #     st.session_state.messages = []
-
     else:
+        # long context flow
         if "messages" not in st.session_state:
+    
             query_context = get_query_context(provider_specialty)
             summary_prompt = 'Please provide a summary of the patient\'s health history in a few paragraphs.'
             st.session_state.messages = [ChatMessage(role='user', content=f'{query_context} {summary_prompt}')]
@@ -142,8 +143,6 @@ def main():
     
             with st.chat_message("assistant", avatar=avatar_images['assistant']):
                 st.markdown(response.message.content)
-                # for r in response:
-                #     st.write(r.delta)
             st.session_state.messages.append(response.message)
 
 
